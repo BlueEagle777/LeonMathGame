@@ -1,0 +1,38 @@
+The following list details the types of equations players can expect at each of the 9 standard races in each map. For example, the first standard race for the addition map will feature equations that involve the sum of two single-digit numbers without the need to carry for the correct answer.
+
+For plus equations:
+
+1) Single digit without carry
+2) Single digit with carry
+3) Double and single without carry
+4) Double and single with carry
+5) Double and double without carry - Grade 3
+6) Double and double with carry - Grade 4
+7) Triple and (single/double) without carry
+8) Triple and double with carry
+9) Triple and triple with carry
+
+For minus equations:
+
+1) Single digit
+2) Single digit
+3) Double and single without borrowing
+4) Double and single with borrowing
+5) Double and double without borrowing
+6) Double and double with borrowing
+7) Triple and (single/double) without borrowing
+8) Triple and double with borrowing
+0 Triple and triple with borrowing
+
+For multiplication equations:
+
+1) Single digit times 2 (single digit must be less than or equal to 6)
+2) Single digit times 2 (single digit must be less than or equal to 12)
+3) Single digit times 3 (single digit must be less than or equal to 6)
+4) Single digit times 3 (single digit must be less than or equal to 12)
+5) Digit x times digit x (x must be 12 or less)
+6) Digit x times digit y (x and y must be 12 or less)
+7) Digit x times digit y (x and y must be 12 or less)
+8) Double digit times 2 or 3
+9) Double en single
+
