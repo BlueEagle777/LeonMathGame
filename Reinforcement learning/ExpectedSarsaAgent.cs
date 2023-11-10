@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Networking;
+using System;
 
 public class ExpectedSarsaAgent : MonoBehaviour
 {
@@ -16,9 +17,10 @@ public class ExpectedSarsaAgent : MonoBehaviour
     private int numActions = 2; // 2 actions (Drive and Boost)
 
     // Hyperparameters for the ExpectedSarsa algorithm
-    private float learningRate = 0.1f; // Learning rate (alpha)
+    private float learningRate = 0.05f; // Learning rate (alpha)
     private float discountFactor = 0.9f; // Discount factor (gamma)
     private float epsilon = 0.1f; // Epsilon-greedy exploration parameter
+    private int maxEpisodes = 900; // Maximum number of episodes
 
     // Initialize the Q-table with zeros
     private float[,] QTable;
@@ -30,6 +32,7 @@ public class ExpectedSarsaAgent : MonoBehaviour
     // List that stores the cumulative rewards
     private int cumulativeReward = 0;
     public List<int> cumulativeRewards = new List<int>();
+    public List<int> episodeNumbers = new List<int>();
 
     private void Awake()
     {
@@ -51,10 +54,9 @@ public class ExpectedSarsaAgent : MonoBehaviour
         {
             // Load the player's data from the server
             dataLoader.LoadData(starManager.playerID);
-            // Expand the recorded player data
-            dataLoader.DoubleData(99);
-            // Train the ExpectedSarsa agent after the data is loaded
-            StartCoroutine(TrainExpectedSarsaAfterDataLoaded(900));
+            
+            // Train the Q-learning agent after the data is loaded
+            StartCoroutine(TrainExpectedSarsaAfterDataLoaded(maxEpisodes));
         }
         else
         {
@@ -65,6 +67,14 @@ public class ExpectedSarsaAgent : MonoBehaviour
     private IEnumerator TrainExpectedSarsaAfterDataLoaded(int numEpisodes)
     {
         while (dataLoader.LoadingData) // Check if data is still being loaded
+        {
+            yield return null; // Wait for a frame
+        }
+
+        // Expand the recorded player data
+        dataLoader.DoubleData((maxEpisodes / 9) - 1);
+
+        while (dataLoader.DoublingData) // Check if data is still being loaded
         {
             yield return null; // Wait for a frame
         }
@@ -93,9 +103,6 @@ public class ExpectedSarsaAgent : MonoBehaviour
         // Step 1 - Initialize the Q-table with zeros
         QTable = new float[numStates, numActions];
 
-        // Initialize the policy array with a default policy
-        float[,] policy = InitializePolicy();
-
         // Step 2 - Repeat for each episode
         for (int episode = 0; episode < numEpisodes; episode++)
         {
@@ -108,35 +115,23 @@ public class ExpectedSarsaAgent : MonoBehaviour
             int currentState = MapState(time, agentPosition);
 
             // Step 4 - Repeat for each step of the episode
-            while (!CheckTerminalState())
+            while (!CheckTerminalState(episode))
             { 
                 // Step 5 - Choose an action using an epsilon-greedy policy
                 int currentAction = EpsilonGreedyPolicy(currentState);
-
-                float[] currentQValues = new float[numActions];
-                for (int action = 0; action < numActions; action++)
-                {
-                    currentQValues[action] = QTable[currentState, action];
-                }
-
-                float[] policyValues = ComputeEpsilonGreedyPolicy(currentQValues, epsilon);
-                // Step 2: Assign the policy values to the specific row in the policy array
-                for (int action = 0; action < numActions; action++)
-                {
-                    policy[currentState, action] = policyValues[action];
-                } 
                 
                 // Step 6 - Take the chosen action, observe reward and next state
                 agentPosition = TakeAction(currentAction, agentPosition);
                 int reward = CalculateReward(agentPosition);
                 int nextState = MapState(time, agentPosition);
                 
-                // update the cummalative rewards list
+                // update the cummalative rewards and episodes lists
                 cumulativeReward += reward;
                 cumulativeRewards.Add(cumulativeReward);
+                episodeNumbers.Add(episode);
 
-                // Step 7 - Update Q(s, a) using the ExpectedSarsa update rule
-                UpdateQValue(currentState, currentAction, reward, nextState, policy);
+                // Step 7 - Update Q(s, a) using the Q-learning update rule
+                UpdateQValue(currentState, currentAction, reward, nextState);
 
                 // Step 8 - Transition to the next state
                 currentState = nextState;
@@ -184,12 +179,12 @@ public class ExpectedSarsaAgent : MonoBehaviour
         System.Text.StringBuilder sb = new System.Text.StringBuilder();
 
         // Add the header line
-        sb.AppendLine("Episode" + delimiter + "Cumulative Reward");
+        sb.AppendLine("TimeStep" + delimiter + "Episode" + delimiter + "Cumulative Reward");
 
         // Add the cumulative rewards
-        for (int episode = 0; episode < cumulativeRewards.Count; episode++)
+        for (int timeStep = 1; timeStep <= cumulativeRewards.Count; timeStep++)
         {
-            sb.AppendLine(episode + delimiter + cumulativeRewards[episode]);
+            sb.AppendLine(timeStep + delimiter + episodeNumbers[timeStep-1] + delimiter + cumulativeRewards[timeStep-1]);
         }
 
         // Write the CSV file
@@ -212,8 +207,16 @@ public class ExpectedSarsaAgent : MonoBehaviour
         } else {
             index = dataLoader.LoadedTimes.IndexOf(time*1000);
             playerPosition = dataLoader.LoadedPositions[index];
-            next_time = dataLoader.LoadedTimes[index+2];
-            next_time = next_time / 1000;
+            try
+            {
+                next_time = dataLoader.LoadedTimes[index + 2];
+                next_time = next_time / 1000;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                next_time = 1;
+            }
+            
         }
 
         int relativePosition = agentPosition - playerPosition;
@@ -222,12 +225,12 @@ public class ExpectedSarsaAgent : MonoBehaviour
         // Map the playerPosition and the relativePosition to State1 - State30
         int positionInterval = playerPosition / 100;
         // BEHIND
-        if (relativePosition < -2)
+        if (relativePosition < -5)
         {
             relPosition = 0;
         }
         // ON
-        else if (relativePosition > -2 && relativePosition < 10)
+        else if (relativePosition > -5 && relativePosition < 15)
         {
             relPosition = 1;
         }
@@ -270,10 +273,10 @@ public class ExpectedSarsaAgent : MonoBehaviour
     // Epsilon-greedy policy for action selection
     private int EpsilonGreedyPolicy(int state)
     {
-        if (Random.value < epsilon)
+        if (UnityEngine.Random.value < epsilon)
         {
             // Explore: Choose a random action
-            return Random.Range(0, numActions);
+            return UnityEngine.Random.Range(0, numActions);
         }
         else
         {
@@ -295,16 +298,19 @@ public class ExpectedSarsaAgent : MonoBehaviour
     }
 
     // Update the Q-value using the ExpectedSarsa update rule
-    private void UpdateQValue(int state, int action, int reward, int nextState, float[,] policy)
+    private void UpdateQValue(int state, int action, int reward, int nextState)
     {
         // Expected Sarsa update rule
         float currentQ = QTable[state, action]; // Q(s, a)
         float VsPrime = 0.0f;
 
+        // Calculate the policy from the QTable
+        float[,] policy = InitializePolicy();
+
         // Calculate Vs' by summing over all possible actions in the next state
-        for (int nextAction = 0; nextAction < numActions; nextAction++)
+        for (int a = 0; a < numActions; a++)
         {
-            VsPrime += policy[nextState, nextAction] * QTable[nextState, nextAction]; // ∑π(s', a)·Q(s', a)
+            VsPrime += policy[nextState, a] * QTable[nextState, a]; // ∑π(s', a)·Q(s', a)
         }
 
         // Update the Q-value for the current state-action pair
@@ -314,7 +320,7 @@ public class ExpectedSarsaAgent : MonoBehaviour
 
 
     // Function to check if the current state is a terminal state
-    private bool CheckTerminalState()
+    private bool CheckTerminalState(int currentEpisode)
     {
         //Debug.Log("Time: " + time + ", Next time: " + next_time);
         
@@ -324,6 +330,7 @@ public class ExpectedSarsaAgent : MonoBehaviour
         }
         else
         {
+            UpdatePlayerData(currentEpisode);
             return true;
         }
     }
@@ -342,12 +349,12 @@ public class ExpectedSarsaAgent : MonoBehaviour
 
         // Calculate the reward
         // BEHIND
-        if (relativePosition < -2)
+        if (relativePosition < -5)
         {
             reward = -1;
         }
         // ON
-        else if (relativePosition > -2 && relativePosition < 10)
+        else if (relativePosition > -5 && relativePosition < 15)
         {
             reward = 1;
         }
@@ -365,62 +372,77 @@ public class ExpectedSarsaAgent : MonoBehaviour
     {
         float[,] policy = new float[numStates, numActions];
 
-        // Initialize with an epsilon-greedy policy
-        float epsilon = 0.1f;
+        // Sum all the values in the QTable
+        float sum = 0.0f;
         for (int state = 0; state < numStates; state++)
         {
-            float actionProbability = epsilon / numActions;
             for (int action = 0; action < numActions; action++)
             {
-                policy[state, action] = actionProbability;
+                sum += QTable[state, action];
             }
-            // Set the probability of the greedy action to 1 - epsilon
-            float[] currentQValues = new float[numActions];
-            for (int action = 0; action < numActions; action++)
+        }
+
+        // Divide each value in the QTable by the sum to get the policy
+        if (sum != 0.0f)
+        {
+            for (int state = 0; state < numStates; state++)
             {
-                currentQValues[action] = QTable[state, action];
+                for (int action = 0; action < numActions; action++)
+                {
+                    policy[state, action] = QTable[state, action] / sum;
+                }
             }
-            int greedyAction = FindGreedyAction(currentQValues);
-            policy[state, greedyAction] += 1.0f - epsilon;
+        }
+        else
+        {
+            policy = QTable;
         }
 
         return policy;
     }
 
-    private int FindGreedyAction(float[] qValues)
+    // Function to update the player's data
+    private void UpdatePlayerData(int currentEpisode)
     {
-        // Find the action with the highest Q-value
-        int greedyAction = 0;
-        float maxQValue = qValues[0];
-        for (int action = 1; action < numActions; action++)
+        if (currentEpisode + 1 < 900)
         {
-            if (qValues[action] > maxQValue)
+            // Determine the range of indices where dataLoader.EpisodeNumbers == currentEpisode + 1
+            int startIndex = 0;
+            int endIndex = 0;
+
+            for (int i = 0; i < dataLoader.EpisodeNumbers.Count; i++)
             {
-                maxQValue = qValues[action];
-                greedyAction = action;
+                if (dataLoader.EpisodeNumbers[i] == currentEpisode + 1)
+                {
+                    startIndex = i;
+                    break;
+                }
+            }
+
+            for (int i = startIndex; i < dataLoader.EpisodeNumbers.Count; i++)
+            {
+                if (dataLoader.EpisodeNumbers[i] == currentEpisode + 2)
+                {
+                    endIndex = i;
+                    break;
+                }
+            }
+
+            //Debug.Log("currentEpisode: " + currentEpisode + ", startIndex: " + startIndex + ", endIndex: " + endIndex);
+
+            // Remove all the data in dataLoader.LoadedTimes and dataLoader.LoadedPositions that are in the range of indices
+            dataLoader.LoadedTimes.RemoveRange(startIndex, endIndex - startIndex);
+            dataLoader.LoadedPositions.RemoveRange(startIndex, endIndex - startIndex);
+            //Debug.Log("Success");
+
+            // Re-index the lists to start at index 0 again
+            int numItemsToRemove = endIndex - startIndex;
+            for (int i = 0; i < numItemsToRemove; i++)
+            {
+                dataLoader.LoadedTimes.Insert(i, dataLoader.LoadedTimes[startIndex + i]);
+                dataLoader.LoadedPositions.Insert(i, dataLoader.LoadedPositions[startIndex + i]);
             }
         }
-        return greedyAction;
-    }
-
-    private float[] ComputeEpsilonGreedyPolicy(float[] qValues, float epsilon)
-    {
-        float[] policy = new float[qValues.Length];
-        int greedyAction = FindGreedyAction(qValues);
-
-        for (int action = 0; action < qValues.Length; action++)
-        {
-            if (action == greedyAction)
-            {
-                policy[action] = 1.0f - epsilon;
-            }
-            else
-            {
-                policy[action] = epsilon / (qValues.Length - 1);
-            }
-        }
-
-        return policy;
     }
 
     

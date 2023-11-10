@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEngine.Networking;
 using System;
 
-public class SarsaAgent : MonoBehaviour
+public class DoubleQLearningAgent : MonoBehaviour
 {
     private StarManager starManager;
     private PlayerDataLoader dataLoader;
@@ -16,14 +16,15 @@ public class SarsaAgent : MonoBehaviour
     private int numStates = 30; // 30 states (State1 to State30)
     private int numActions = 2; // 2 actions (Drive and Boost)
 
-    // Hyperparameters for the SARSA algorithm
+    // Hyperparameters for the Q-learning algorithm
     private float learningRate = 0.05f; // Learning rate (alpha)
     private float discountFactor = 0.9f; // Discount factor (gamma)
     private float epsilon = 0.1f; // Epsilon-greedy exploration parameter
     private int maxEpisodes = 900; // Maximum number of episodes
 
     // Initialize the Q-table with zeros
-    private float[,] QTable;
+    private float[,] QTable1;
+    private float[,] QTable2;
 
     // Other variables
     private int time = 0;
@@ -32,9 +33,6 @@ public class SarsaAgent : MonoBehaviour
     // List that stores the cumulative rewards
     private int cumulativeReward = 0;
     public List<int> cumulativeRewards = new List<int>();
-    // List that stores the reward at each time step
-    public List<int> rewards = new List<int>();
-    // List that stores the episode numbers
     public List<int> episodeNumbers = new List<int>();
 
     private void Awake()
@@ -51,15 +49,15 @@ public class SarsaAgent : MonoBehaviour
         dataLoader = FindObjectOfType<PlayerDataLoader>();
     }
 
-    public void StartSarsa()
+    public void StartQLearning()
     {
-        if (dataLoader != null && starManager.isAI == true)
+        if (dataLoader != null)
         {
             // Load the player's data from the server
             dataLoader.LoadData(starManager.playerID);
-
-            // Train the Sarsa agent after the data is loaded
-            StartCoroutine(TrainSarsaAfterDataLoaded(maxEpisodes));
+            
+            // Train the Q-learning agent after the data is loaded
+            StartCoroutine(TrainQLearningAfterDataLoaded(maxEpisodes));
         }
         else
         {
@@ -67,7 +65,7 @@ public class SarsaAgent : MonoBehaviour
         }
     }
 
-    private IEnumerator TrainSarsaAfterDataLoaded(int numEpisodes)
+    private IEnumerator TrainQLearningAfterDataLoaded(int numEpisodes)
     {
         while (dataLoader.LoadingData) // Check if data is still being loaded
         {
@@ -82,6 +80,8 @@ public class SarsaAgent : MonoBehaviour
             yield return null; // Wait for a frame
         }
 
+        // At this point, the data loading is complete
+
         // Print the Q-table
         /*Debug.Log("Q-table (begin):");
         for (int state = 0; state < numStates; state++)
@@ -92,17 +92,18 @@ public class SarsaAgent : MonoBehaviour
             }
         }*/
 
-        // Train the Sarsa agent
-        TrainSarsaAgent(numEpisodes);
+        // Train the Q-learning agent
+        TrainQLearningAgent(numEpisodes);
     }
 
 
 
-    // Training the Sarsa agent
-    private void TrainSarsaAgent(int numEpisodes)
+    // Training the Q-learning agent
+    private void TrainQLearningAgent(int numEpisodes)
     {
         // Step 1 - Initialize the Q-table with zeros
-        QTable = new float[numStates, numActions];
+        QTable1 = new float[numStates, numActions];
+        QTable2 = new float[numStates, numActions];
 
         // Step 2 - Repeat for each episode
         for (int episode = 0; episode < numEpisodes; episode++)
@@ -114,34 +115,28 @@ public class SarsaAgent : MonoBehaviour
             
             // Step 3 - Initialize the state
             int currentState = MapState(time, agentPosition);
-            
-            // Step 4 - Choose an action using an epsilon-greedy policy
-            int currentAction = EpsilonGreedyPolicy(currentState);
 
-            // Step 5 - Repeat for each step of the episode
+            // Step 4 - Repeat for each step of the episode
             while (!CheckTerminalState(episode))
             { 
+                // Step 5 - Choose an action using an epsilon-greedy policy
+                int currentAction = EpsilonGreedyPolicy(currentState);
+                
                 // Step 6 - Take the chosen action, observe reward and next state
                 agentPosition = TakeAction(currentAction, agentPosition);
                 int reward = CalculateReward(agentPosition);
                 int nextState = MapState(time, agentPosition);
                 
-                // update the cummalative rewards and episode numbers lists
+                // update the cummalative rewards and episodes lists
                 cumulativeReward += reward;
                 cumulativeRewards.Add(cumulativeReward);
-                episodeNumbers.Add(episode+1);
+                episodeNumbers.Add(episode);
 
-                // Step 7 - Choose the next action from the next stae using an epsilon-greedy policy
-                int nextAction = EpsilonGreedyPolicy(nextState);
+                // Step 7 - Update Q(s, a) using the Q-learning update rule
+                UpdateQValue(currentState, currentAction, reward, nextState);
 
-                // Step 8 - Update Q(s, a) using the Sarsa update rule
-                UpdateQValue(currentState, currentAction, reward, nextState, nextAction);
-
-                // Step 9 - Transition to the next state
+                // Step 8 - Transition to the next state
                 currentState = nextState;
-                
-                // Step 10 - Transition to the next action
-                currentAction = nextAction;
             }
         }
 
@@ -163,7 +158,7 @@ public class SarsaAgent : MonoBehaviour
         }*/
 
         // Save the Q-table to starManager
-        starManager.QTable = QTable;
+        starManager.QTable = QTable1;
 
         // Print the bossActions list
         /*Debug.Log("bossActions:");
@@ -179,19 +174,19 @@ public class SarsaAgent : MonoBehaviour
     // Export the cumulative rewards to a CSV file
     private void ExportCumulativeRewardsToCSV()
     {
-        string filePath =  "C:/Users/Leon/OneDrive - North-West University/Documents/NWU 4/FYP/RL code/Sarsa_final/SarsaCumulativeRewards10.csv";
+        string filePath =  "C:/Users/Leon/OneDrive - North-West University/Documents/NWU 4/FYP/RL code/Python/CumulativeRewardsDoubleQLearning.csv";
         string delimiter = ",";
 
         // Create a StringBuilder to populate the CSV file
         System.Text.StringBuilder sb = new System.Text.StringBuilder();
 
         // Add the header line
-        sb.AppendLine("TimeStep" + delimiter + "Episode" + delimiter + "Reward" + delimiter + "Cumulative Reward");
+        sb.AppendLine("TimeStep" + delimiter + "Episode" + delimiter + "Cumulative Reward");
 
         // Add the cumulative rewards
         for (int timeStep = 1; timeStep <= cumulativeRewards.Count; timeStep++)
         {
-            sb.AppendLine(timeStep + delimiter + episodeNumbers[timeStep-1] + delimiter + rewards[timeStep-1] + delimiter +cumulativeRewards[timeStep-1]);
+            sb.AppendLine(timeStep + delimiter + episodeNumbers[timeStep-1] + delimiter + cumulativeRewards[timeStep-1]);
         }
 
         // Write the CSV file
@@ -223,6 +218,7 @@ public class SarsaAgent : MonoBehaviour
             {
                 next_time = 1;
             }
+            
         }
 
         int relativePosition = agentPosition - playerPosition;
@@ -287,6 +283,26 @@ public class SarsaAgent : MonoBehaviour
         else
         {
             // Exploit: Choose the action with the highest Q-value
+            
+            // Generate QTable by summing Q1 + Q2
+            int rows = QTable1.GetLength(0);    // Number of rows in QTable1
+            int cols = QTable1.GetLength(1);    // Number of columns in QTable1
+
+            float[,] QTable = new float[rows, cols];
+
+            if (QTable1.GetLength(0) != QTable2.GetLength(0) || QTable1.GetLength(1) != QTable2.GetLength(1))
+            {
+                Debug.LogError("QTable1 and QTable2 have different dimensions!");
+            }
+
+            for (int i = 0; i < rows; i++)
+            {
+                for (int j = 0; j < cols; j++)
+                {
+                    QTable[i, j] = QTable1[i, j] + QTable2[i, j];
+                }
+            }
+
             float maxQ = QTable[state, 0];
             int bestAction = 0;
 
@@ -303,15 +319,43 @@ public class SarsaAgent : MonoBehaviour
         }
     }
 
-    // Update the Q-value using the SARSA update rule
-    private void UpdateQValue(int state, int action, int reward, int nextState, int nextAction)
+    // Update the Q-value using the Double Q-learning update rule
+private void UpdateQValue(int state, int action, int reward, int nextState)
+{
+    // Generate a random value between 0 and 1
+    float rand = UnityEngine.Random.value;
+
+    if (rand <= 0.5)
     {
-        // SARSA update rule
-        float currentQ = QTable[state, action]; // Q(s,a)
-        float targetQ = QTable[nextState, nextAction]; // Q(s',a')
-        float newQ = currentQ + learningRate * (reward + discountFactor * targetQ - currentQ);
-        QTable[state, action] = newQ;
+        // Update Q1 using Q2 as the target
+        int maxAction = FindMaxAction(QTable1, nextState);
+        QTable1[state, action] += learningRate * (reward + discountFactor * QTable2[nextState, maxAction] - QTable1[state, action]);
     }
+    else
+    {
+        // Update Q2 using Q1 as the target
+        int maxAction = FindMaxAction(QTable2, nextState);
+        QTable2[state, action] += learningRate * (reward + discountFactor * QTable1[nextState, maxAction] - QTable2[state, action]);
+    }
+}
+
+// Helper function to find the action with the maximum Q-value
+private int FindMaxAction(float[,] qTable, int state)
+{
+    int maxAction = 0;
+    float maxQValue = qTable[state, 0];
+
+    for (int action = 1; action < numActions; action++)
+    {
+        if (qTable[state, action] > maxQValue)
+        {
+            maxAction = action;
+            maxQValue = qTable[state, action];
+        }
+    }
+
+    return maxAction;
+}
 
     // Function to check if the current state is a terminal state
     private bool CheckTerminalState(int currentEpisode)
@@ -358,13 +402,9 @@ public class SarsaAgent : MonoBehaviour
             reward = -1;
         }
 
-        // Add reward to list
-        rewards.Add(reward);
-
         return reward;
 
     }
-
 
     // Function to update the player's data
     private void UpdatePlayerData(int currentEpisode)

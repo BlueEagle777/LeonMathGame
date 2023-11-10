@@ -3,28 +3,36 @@ using System.Collections.Generic;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Networking;
+using System;
 
 public class DQLAgent : MonoBehaviour
 {
     // Define the initial parameters and variables
-    private int C = 1000; // Number of iterations between each update of the target network
-    private float alpha = 0.0001f; // Learning rate
+    private int C = 200; // Number of iterations between each update of the target network
+    private float alpha = 0.05f; // Learning rate
     private float gamma = 0.9f; // Discount factor
     private float epsilon = 0.1f; // Epsilon-greedy exploration parameter
     private ReplayBuffer D; // Replay buffer D
-    private int minibatchSize = 32;
+    private int minibatchSize = 32; // Minibatch size
     private int t = 0; // Counter for the total number of iterations
+    private int maxEpisodes = 900; // Maximum number of episodes
 
     // Other variables
     private int time = 0;
     private int next_time = 0;
     private int maxTimeMS;
     private int agentPosition;
+    // List that stores the cumulative rewards
     private int cumulativeReward = 0;
     public List<int> cumulativeRewards = new List<int>();
+    // List that stores the reward at each time step
+    public List<int> rewards = new List<int>();
+    // List that stores the episode numbers
+    public List<int> episodeNumbers = new List<int>();
 
     // Add reference to other scripts
     public NeuralNetwork neuralNetwork;
+    //public DeepNeuralNetwork neuralNetwork;
     private StarManager starManager;
     private PlayerDataLoader dataLoader;
 
@@ -56,6 +64,12 @@ public class DQLAgent : MonoBehaviour
         public void Initialize()
         {
             buffer.Clear(); // Clear the buffer to initialize it
+        }
+
+        // Function to get the size of the replay buffer
+        public int GetSize()
+        {
+            return buffer.Count;
         }
 
         public void AddEntry(State currentState, int action, int reward, State nextState, bool isTerminal)
@@ -107,6 +121,7 @@ public class DQLAgent : MonoBehaviour
 
         // Find the existing NeuralNetwork instance in the scene
         neuralNetwork = FindObjectOfType<NeuralNetwork>();
+        //neuralNetwork = FindObjectOfType<DeepNeuralNetwork>();
     }
 
     public void StartDQL()
@@ -116,8 +131,8 @@ public class DQLAgent : MonoBehaviour
             // Load the player's data from the server
             dataLoader.LoadData(starManager.playerID);
             
-            // Train the Q-learning agent after the data is loaded
-            StartCoroutine(TrainDQLAfterDataLoaded(900));
+            // Train the DQL-learning agent after the data is loaded
+            StartCoroutine(TrainDQLAfterDataLoaded(maxEpisodes));
         }
         else
         {
@@ -133,16 +148,16 @@ public class DQLAgent : MonoBehaviour
         }
         
         // Expand the recorded player data
-        /*dataLoader.DoubleData(99);
+        dataLoader.DoubleData((maxEpisodes / 9) - 1);
 
-        while (dataLoader.DoublingData) // Check if data is still being doubled
+        while (dataLoader.DoublingData) // Check if data is still being loaded
         {
-            yield return null;
+            yield return null; // Wait for a frame
         }
 
-        // At this point, the data loading is complete*/
+        // At this point, the data loading is complete
         
-        // Get the maximum time in milliseconds
+        // Get the maximum time in milliseconds (used to normalize the time variable)
         maxTimeMS = dataLoader.GetMaxTime();
 
         // Train the DQL agent
@@ -155,7 +170,7 @@ public class DQLAgent : MonoBehaviour
     private void TrainDQLAgent(int numEpisodes)
     {
         // Line 1 - Initialize replay memory D to capacity N
-        int N = 10000; // Replay buffer capacity
+        int N = 1000; // Replay buffer capacity
         D = new ReplayBuffer(N); // Initialize the replay buffer
         D.Initialize();
 
@@ -179,7 +194,6 @@ public class DQLAgent : MonoBehaviour
             
             // Line 6 - for t = 1, T do (T is the time steps in an episode)
             do
-            //for (int i = 0; i < 20; i++)
             {
                 // Line 7 - Sample action at from policy Q(φt, a; θ) [epsilon-greedy]
                 int action = SampleAction(epsilon, currentState.xPosition, currentState.relPosition, currentState.timeMs);
@@ -189,6 +203,7 @@ public class DQLAgent : MonoBehaviour
                 int reward = CalculateReward(newAgentPosition);
                 cumulativeReward += reward; // update the cummalative rewards list
                 cumulativeRewards.Add(cumulativeReward);
+                episodeNumbers.Add(episode+1);
 
                 // Line 9 - Determine the next state st+1 and preprocess φt+1 = φ(st+1)
                 (new_agentPosition, new_relativePosition, new_time) = MapState(time, newAgentPosition);
@@ -204,7 +219,7 @@ public class DQLAgent : MonoBehaviour
                 // Line 12 - Sample random minibatch of transitions (φj , aj , rj , φj+1, terminal) from D
                 List<(State, int, int, State, bool)> minibatch = D.SampleMinibatch(minibatchSize);
 
-
+                // If there is enough samples in minibatch
                 if (minibatch.Count == minibatchSize)
                 {
                     for (int j = 0; j < minibatchSize; j++)
@@ -248,6 +263,12 @@ public class DQLAgent : MonoBehaviour
                 {
                     neuralNetwork.UpdateTargetNetwork();
                 }
+
+                // Update the target network every ninth episode
+                /*if (episode % 9 == 0)
+                {
+                    neuralNetwork.UpdateTargetNetwork();
+                }*/
                 
                 // Update state variable
                 currentState = nextState;
@@ -260,7 +281,7 @@ public class DQLAgent : MonoBehaviour
 
         } // Line 21 - end for
 
-        Debug.Log("Training complete!");
+        Debug.Log("Training complete!" + t);
 
         // Export the cumulative rewards to a CSV file
         ExportCumulativeRewardsToCSV();
@@ -276,12 +297,12 @@ public class DQLAgent : MonoBehaviour
         System.Text.StringBuilder sb = new System.Text.StringBuilder();
 
         // Add the header line
-        sb.AppendLine("Episode" + delimiter + "Cumulative Reward");
+        sb.AppendLine("TimeStep" + delimiter + "Episode" + delimiter + "Reward" + delimiter + "Cumulative Reward");
 
         // Add the cumulative rewards
-        for (int episode = 0; episode < cumulativeRewards.Count; episode++)
+        for (int timeStep = 1; timeStep <= cumulativeRewards.Count; timeStep++)
         {
-            sb.AppendLine(episode + delimiter + cumulativeRewards[episode]);
+            sb.AppendLine(timeStep + delimiter + episodeNumbers[timeStep-1] + delimiter + rewards[timeStep-1] + delimiter +cumulativeRewards[timeStep-1]);
         }
 
         // Write the CSV file
@@ -300,8 +321,15 @@ public class DQLAgent : MonoBehaviour
         } else {
             index = dataLoader.LoadedTimes.IndexOf(time*1000);
             playerPosition = dataLoader.LoadedPositions[index];
-            next_time = dataLoader.LoadedTimes[index+2];
-            next_time = next_time / 1000;
+            try
+            {
+                next_time = dataLoader.LoadedTimes[index + 2];
+                next_time = next_time / 1000;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                next_time = 1;
+            }
         }
 
         int relativePosition = agentPosition - playerPosition;
@@ -309,12 +337,12 @@ public class DQLAgent : MonoBehaviour
 
         
         // BEHIND
-        if (relativePosition < -2)
+        if (relativePosition < -5)
         {
             relPosition = 1;
         }
         // ON
-        else if (relativePosition >= -2 && relativePosition < 10)
+        else if (relativePosition >= -5 && relativePosition < 15)
         {
             relPosition = 2;
         }
@@ -343,10 +371,10 @@ public class DQLAgent : MonoBehaviour
     // Function to sample an action
     private int SampleAction(float epsilon, float currentxPosition, float currentRelPosition, float currentTime)
     {
-        if (Random.value < epsilon)
+        if (UnityEngine.Random.value < epsilon)
         {
             // Explore: Choose a random action
-            return Random.Range(0, 2); // Assuming two possible actions (0 and 1)
+            return UnityEngine.Random.Range(0, 2); // Assuming two possible actions (0 and 1)
         }
         else
         {
@@ -391,12 +419,12 @@ public class DQLAgent : MonoBehaviour
 
         // Calculate the reward
         // BEHIND
-        if (relativePosition < -2)
+        if (relativePosition < -5)
         {
             reward = -1;
         }
         // ON
-        else if (relativePosition > -2 && relativePosition < 10)
+        else if (relativePosition > -5 && relativePosition < 15)
         {
             reward = 1;
         }
@@ -406,20 +434,14 @@ public class DQLAgent : MonoBehaviour
             reward = -1;
         }
 
+        // Add reward to list
+        rewards.Add(reward);
+
         return reward;
 
     }
 
-    private void UpdateTargetNetwork()
-    {
-        // Implement logic to update the target Q-network weights
-        if (t % C == 0)
-        {
-            // Update wMinus to match w (copy the weights)
-            neuralNetwork.UpdateTargetNetwork();
-        }
-    }
-
+    // Function to store the experience in the replay buffer
     private void StoreExperience(State currentState, int action, int reward, State nextState, bool isTerminal)
     {
         D.AddEntry(currentState, action, reward, nextState, isTerminal);

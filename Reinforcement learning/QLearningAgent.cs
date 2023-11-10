@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.Networking;
+using System;
 
 public class QLearningAgent : MonoBehaviour
 {
@@ -16,9 +17,10 @@ public class QLearningAgent : MonoBehaviour
     private int numActions = 2; // 2 actions (Drive and Boost)
 
     // Hyperparameters for the Q-learning algorithm
-    private float learningRate = 0.1f; // Learning rate (alpha)
+    private float learningRate = 0.05f; // Learning rate (alpha)
     private float discountFactor = 0.9f; // Discount factor (gamma)
     private float epsilon = 0.1f; // Epsilon-greedy exploration parameter
+    private int maxEpisodes = 900; // Maximum number of episodes
 
     // Initialize the Q-table with zeros
     private float[,] QTable;
@@ -30,6 +32,9 @@ public class QLearningAgent : MonoBehaviour
     // List that stores the cumulative rewards
     private int cumulativeReward = 0;
     public List<int> cumulativeRewards = new List<int>();
+    // List that stores the reward at each time step
+    public List<int> rewards = new List<int>();
+    public List<int> episodeNumbers = new List<int>();
 
     private void Awake()
     {
@@ -53,7 +58,7 @@ public class QLearningAgent : MonoBehaviour
             dataLoader.LoadData(starManager.playerID);
             
             // Train the Q-learning agent after the data is loaded
-            StartCoroutine(TrainQLearningAfterDataLoaded(900));
+            StartCoroutine(TrainQLearningAfterDataLoaded(maxEpisodes));
         }
         else
         {
@@ -69,7 +74,7 @@ public class QLearningAgent : MonoBehaviour
         }
 
         // Expand the recorded player data
-        dataLoader.DoubleData(99);
+        dataLoader.DoubleData((maxEpisodes / 9) - 1);
 
         while (dataLoader.DoublingData) // Check if data is still being loaded
         {
@@ -122,9 +127,10 @@ public class QLearningAgent : MonoBehaviour
                 int reward = CalculateReward(agentPosition);
                 int nextState = MapState(time, agentPosition);
                 
-                // update the cummalative rewards list
+                // update the cummalative rewards and episodes lists
                 cumulativeReward += reward;
                 cumulativeRewards.Add(cumulativeReward);
+                episodeNumbers.Add(episode);
 
                 // Step 7 - Update Q(s, a) using the Q-learning update rule
                 UpdateQValue(currentState, currentAction, reward, nextState);
@@ -168,19 +174,19 @@ public class QLearningAgent : MonoBehaviour
     // Export the cumulative rewards to a CSV file
     private void ExportCumulativeRewardsToCSV()
     {
-        string filePath =  "C:/Users/Leon/OneDrive - North-West University/Documents/NWU 4/FYP/RL code/Python/CumulativeRewardsQLearning.csv";
+        string filePath =  "C:/Users/Leon/OneDrive - North-West University/Documents/NWU 4/FYP/RL code/Qlearning_final/CumulativeRewardsQLearning10.csv";
         string delimiter = ",";
 
         // Create a StringBuilder to populate the CSV file
         System.Text.StringBuilder sb = new System.Text.StringBuilder();
 
         // Add the header line
-        sb.AppendLine("Episode" + delimiter + "Cumulative Reward");
+        sb.AppendLine("TimeStep" + delimiter + "Episode" + delimiter + "Reward" + delimiter + "Cumulative Reward");
 
         // Add the cumulative rewards
-        for (int episode = 0; episode < cumulativeRewards.Count; episode++)
+        for (int timeStep = 1; timeStep <= cumulativeRewards.Count; timeStep++)
         {
-            sb.AppendLine(episode + delimiter + cumulativeRewards[episode]);
+            sb.AppendLine(timeStep + delimiter + episodeNumbers[timeStep-1] + delimiter + rewards[timeStep-1] + delimiter +cumulativeRewards[timeStep-1]);
         }
 
         // Write the CSV file
@@ -203,8 +209,16 @@ public class QLearningAgent : MonoBehaviour
         } else {
             index = dataLoader.LoadedTimes.IndexOf(time*1000);
             playerPosition = dataLoader.LoadedPositions[index];
-            next_time = dataLoader.LoadedTimes[index+2];
-            next_time = next_time / 1000;
+            try
+            {
+                next_time = dataLoader.LoadedTimes[index + 2];
+                next_time = next_time / 1000;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                next_time = 1;
+            }
+            
         }
 
         int relativePosition = agentPosition - playerPosition;
@@ -213,12 +227,12 @@ public class QLearningAgent : MonoBehaviour
         // Map the playerPosition and the relativePosition to State1 - State30
         int positionInterval = playerPosition / 100;
         // BEHIND
-        if (relativePosition < -2)
+        if (relativePosition < -5)
         {
             relPosition = 0;
         }
         // ON
-        else if (relativePosition > -2 && relativePosition < 10)
+        else if (relativePosition > -5 && relativePosition < 15)
         {
             relPosition = 1;
         }
@@ -261,10 +275,10 @@ public class QLearningAgent : MonoBehaviour
     // Epsilon-greedy policy for action selection
     private int EpsilonGreedyPolicy(int state)
     {
-        if (Random.value < epsilon)
+        if (UnityEngine.Random.value < epsilon)
         {
             // Explore: Choose a random action
-            return Random.Range(0, numActions);
+            return UnityEngine.Random.Range(0, numActions);
         }
         else
         {
@@ -338,12 +352,12 @@ public class QLearningAgent : MonoBehaviour
 
         // Calculate the reward
         // BEHIND
-        if (relativePosition < -2)
+        if (relativePosition < -5)
         {
             reward = -1;
         }
         // ON
-        else if (relativePosition > -2 && relativePosition < 10)
+        else if (relativePosition > -5 && relativePosition < 15)
         {
             reward = 1;
         }
@@ -352,6 +366,9 @@ public class QLearningAgent : MonoBehaviour
         {
             reward = -1;
         }
+
+        // Add reward to list
+        rewards.Add(reward);
 
         return reward;
 
@@ -384,12 +401,12 @@ public class QLearningAgent : MonoBehaviour
                 }
             }
 
-            Debug.Log("currentEpisode: " + currentEpisode + ", startIndex: " + startIndex + ", endIndex: " + endIndex);
+            //Debug.Log("currentEpisode: " + currentEpisode + ", startIndex: " + startIndex + ", endIndex: " + endIndex);
 
             // Remove all the data in dataLoader.LoadedTimes and dataLoader.LoadedPositions that are in the range of indices
             dataLoader.LoadedTimes.RemoveRange(startIndex, endIndex - startIndex);
             dataLoader.LoadedPositions.RemoveRange(startIndex, endIndex - startIndex);
-            Debug.Log("Success");
+            //Debug.Log("Success");
 
             // Re-index the lists to start at index 0 again
             int numItemsToRemove = endIndex - startIndex;

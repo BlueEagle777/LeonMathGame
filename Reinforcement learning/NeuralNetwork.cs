@@ -46,13 +46,16 @@ public class NeuralNetwork : MonoBehaviour
     private float[,] InitializeWeights(int input_size, int output_size)
     {
         float[,] weights = new float[input_size, output_size];
+        float xavierFactor = Mathf.Sqrt(2.0f / (input_size + output_size));
+
         for (int i = 0; i < input_size; i++)
         {
             for (int j = 0; j < output_size; j++)
             {
-                weights[i, j] = (float)random.NextDouble() * 2 - 1; // Random values between -1 and 1
+                weights[i, j] = (float)random.NextDouble() * 2 * xavierFactor - xavierFactor;
             }
         }
+
         return weights;
     }
 
@@ -79,7 +82,10 @@ public class NeuralNetwork : MonoBehaviour
                 hiddenLayerOutput[i] += inputVector[j] * inputToHiddenWeights[j, i];
             }
             hiddenLayerOutput[i] += hiddenBiases[i];
-            hiddenLayerOutput[i] = Mathf.Max(0.0f, hiddenLayerOutput[i]); // ReLU activation
+            //hiddenLayerOutput[i] = Mathf.Max(0.0f, hiddenLayerOutput[i]); // ReLU activation
+            hiddenLayerOutput[i] = 1.0f / (1.0f + Mathf.Exp(-hiddenLayerOutput[i])); // Sigmoid activation
+
+
         }
 
         for (int i = 0; i < outputSize; i++)
@@ -119,7 +125,7 @@ public class NeuralNetwork : MonoBehaviour
     {
         // Create an input vector from the provided parameters
         float[] inputVector = { xPosition, relPosition, timeMs };
-        
+
         // Forward pass to compute the network's output
         (float[] output, float[] hiddenLayerOutput) = ForwardPass(inputVector);
 
@@ -127,41 +133,57 @@ public class NeuralNetwork : MonoBehaviour
         float[] loss = new float[outputSize];
         for (int i = 0; i < outputSize; i++)
         {
-            loss[i] = target - output[i];
+            loss[i] = (target - output[i]) * (target - output[i]); // (yj − Q(φj , aj ; θ))^2
         }
 
-        // Backpropagation
-        float[] deltaOutput = new float[outputSize];
-        float[] deltaHidden = new float[hiddenLayerSize];
+        float[] delta_output = new float[outputSize];
+        float[] delta_hidden = new float[hiddenLayerSize];
 
-        // Update the output layer weights and biases
+        // Calculate delta for output layer
         for (int i = 0; i < outputSize; i++)
         {
-            deltaOutput[i] = loss[i]; // Calculate the gradient for the output layer
-            for (int j = 0; j < hiddenLayerSize; j++)
-            {
-                hiddenToOutputWeights[j, i] += learningRate * deltaOutput[i] * hiddenLayerOutput[j];
-            }
-            outputBiases[i] += learningRate * deltaOutput[i];
+            delta_output[i] = loss[i] * output[i] * (1 - output[i]);
         }
 
-        // Backpropagate the gradient to the hidden layer
+        // Calculate delta for hidden layer
         for (int i = 0; i < hiddenLayerSize; i++)
         {
-            deltaHidden[i] = 0;
+            float sum = 0;
             for (int j = 0; j < outputSize; j++)
             {
-                deltaHidden[i] += deltaOutput[j] * hiddenToOutputWeights[i, j];
+                sum += delta_output[j] * hiddenToOutputWeights[i, j];
             }
-            // Apply the derivative of the ReLU activation function
-            deltaHidden[i] *= (hiddenLayerOutput[i] > 0) ? 1 : 0;
+            delta_hidden[i] = hiddenLayerOutput[i] * (1 - hiddenLayerOutput[i]) * sum;
+        }
 
-            // Update the hidden layer weights and biases
+        // Update output weights
+        for (int i = 0; i < outputSize; i++)
+        {
+            for (int j = 0; j < hiddenLayerSize; j++)
+            {
+                hiddenToOutputWeights[j, i] += learningRate * delta_output[i] * hiddenLayerOutput[j];
+            }
+        }
+
+        // Update hidden weights
+        for (int i = 0; i < hiddenLayerSize; i++)
+        {
             for (int j = 0; j < inputSize; j++)
             {
-                inputToHiddenWeights[j, i] += learningRate * deltaHidden[i] * inputVector[j];
+                inputToHiddenWeights[j, i] += learningRate * delta_hidden[i] * inputVector[j];
             }
-            hiddenBiases[i] += learningRate * deltaHidden[i];
+        }
+
+        // Update output biases
+        for (int i = 0; i < outputSize; i++)
+        {
+            outputBiases[i] += learningRate * delta_output[i];
+        }
+
+        // Update hidden biases
+        for (int i = 0; i < hiddenLayerSize; i++)
+        {
+            hiddenBiases[i] += learningRate * delta_hidden[i];
         }
     }
 }

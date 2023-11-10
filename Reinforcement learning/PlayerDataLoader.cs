@@ -26,13 +26,13 @@ public class PlayerDataLoader : MonoBehaviour
 
     public void LoadData(int playerID)
     {
-        //StartCoroutine(LoadPlayerData(playerID));
-        LoadPlayerDataFromCSV();
+        StartCoroutine(LoadPlayerData(playerID));
+        //LoadPlayerDataFromCSV();
     }
 
-    /*private IEnumerator LoadPlayerData(int playerID)
+    private IEnumerator LoadPlayerData(int playerID)
     {
-        /*string url = starManager.GetURL("load_player_data.php"); // Replace with your PHP script URL
+        string url = starManager.GetURL("load_player_data.php"); // Replace with your PHP script URL
 
         // Create a form to send the player ID
         WWWForm form = new WWWForm();
@@ -75,7 +75,7 @@ public class PlayerDataLoader : MonoBehaviour
 
         // Dispose of the UnityWebRequest object to prevent memory leaks
         www.Dispose();
-    }*/
+    }
 
     // Function to load the player data from csv file
     public void LoadPlayerDataFromCSV()
@@ -104,9 +104,6 @@ public class PlayerDataLoader : MonoBehaviour
 
     public void DoubleData(int repeatCount)
     {
-        int originalTimesCount = LoadedTimes.Count;
-        int originalPositionsCount = LoadedPositions.Count;
-
         // Remove duplicate data from the lists
         for (int i = 0; i < LoadedTimes.Count - 1; i++)
         {
@@ -117,6 +114,12 @@ public class PlayerDataLoader : MonoBehaviour
                 i--;
             }
         }
+
+        // If the number of episodes is greater than 9, then delete the unnecessary data
+        DeleteUnnecessaryData();
+
+        int originalTimesCount = LoadedTimes.Count;
+        int originalPositionsCount = LoadedPositions.Count;
 
         // Duplicate the data
         for (int i = 0; i < repeatCount; i++)
@@ -131,16 +134,13 @@ public class PlayerDataLoader : MonoBehaviour
             for (int j = 0; j < originalPositionsCount; j++)
             {
                 int originalPosition = LoadedPositions[j];
-                int variance = Random.Range(-3, 4); // Random value between -3 and 3
+                int variance = Random.Range(-2, 3); // Random value between -2 and 2
                 LoadedPositions.Add(originalPosition + variance);
             }
         }
 
-        // get the total number of episodes
-        int totalEpisodes = (repeatCount+1) * 9;
+        // Determine the episode numbers and add them to the EpisodeNumbers list
         int currentEpisode = 1;
-        int time = 0;
-        int next_time = 1000;
 
         for (int i = 0; i < LoadedTimes.Count; i++)
         {
@@ -150,8 +150,8 @@ public class PlayerDataLoader : MonoBehaviour
             }
             else
             {
-                time = LoadedTimes[i];
-                next_time = LoadedTimes[i + 1];
+                int time = LoadedTimes[i];
+                int next_time = LoadedTimes[i + 1];
 
                 if (time < next_time)
                 {
@@ -164,32 +164,6 @@ public class PlayerDataLoader : MonoBehaviour
                 }
             }
         }
-
-        // Check if the max episode number is divisible by 9
-        int maxEpisode = currentEpisode;
-
-        if (maxEpisode % 9 != 0)
-        {
-            // Calculate the number of elements to remove to make it divisible by 9
-            int elementsToRemove = maxEpisode % 9;
-
-            // Loop to remove elements from the end of the lists
-            for (int i = EpisodeNumbers.Count - 1; i >= 0 && elementsToRemove > 0; i--)
-            {
-                if (EpisodeNumbers[i] == maxEpisode)
-                {
-                    EpisodeNumbers.RemoveAt(i);
-                    LoadedTimes.RemoveAt(i);
-                    LoadedPositions.RemoveAt(i);
-                    elementsToRemove--;
-                }
-            }
-        }
-
-        // Remove the last element in the lists
-        EpisodeNumbers.RemoveAt(EpisodeNumbers.Count - 1);
-        LoadedTimes.RemoveAt(LoadedTimes.Count - 1);
-        LoadedPositions.RemoveAt(LoadedPositions.Count - 1);
 
         Debug.Log("LoadedTimes.Count: " + LoadedTimes.Count);
         Debug.Log("EpisodeNumbers.Count: " + EpisodeNumbers.Count);
